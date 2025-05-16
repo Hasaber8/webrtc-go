@@ -1,1 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebRTC Signaling Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    input, textarea, select {
+      width: 100%;
+      padding: 8px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    textarea {
+      height: 100px;
+      resize: vertical;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .connected {
+      background-color: #dff0d8;
+      color: #3c763d;
+    }
+    .disconnected {
+      background-color: #f2dede;
+      color: #a94442;
+    }
+    .messages {
+      margin-top: 20px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 10px;
+      height: 200px;
+      overflow-y: auto;
+      background-color: #f9f9f9;
+    }
+    .message {
+      margin-bottom: 8px;
+      padding: 8px;
+      background-color: #fff;
+      border-radius: 4px;
+      border-left: 3px solid #4CAF50;
+    }
+    .message.sent {
+      border-left-color: #2196F3;
+    }
+    .login-container {
+      margin-bottom: 20px;
+      padding: 15px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background-color: #f9f9f9;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebRTC Signaling Test</h1>
+  
+  <div class="login-container">
+    <h2>Authentication</h2>
+    <div class="form-group">
+      <label for="username">Username:</label>
+      <input id="username" placeholder="Your username" />
+    </div>
+    <div class="form-group">
+      <label for="password">Password:</label>
+      <input id="password" type="password" placeholder="Your password" />
+    </div>
+    <button id="connect-btn" onclick="connect()">Connect</button>
+    <div id="connection-status" class="status disconnected">Disconnected</div>
+  </div>
 
+  <div class="container">
+    <h2>Send Message</h2>
+    <div class="form-group">
+      <label for="target">Send to:</label>
+      <input id="target" placeholder="Recipient's username" />
+    </div>
+    <div class="form-group">
+      <label for="type">Message Type:</label>
+      <select id="type">
+        <option value="offer">SDP Offer</option>
+        <option value="answer">SDP Answer</option>
+        <option value="candidate">ICE Candidate</option>
+        <option value="join">Join Notification</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="message">Payload:</label>
+      <textarea id="message" placeholder="Enter SDP or ICE payload"></textarea>
+    </div>
+    <button onclick="sendMessage()">Send Message</button>
+  </div>
+
+  <h2>Message Log</h2>
+  <div id="messages" class="messages"></div>
+
+  <script>
+    let socket;
+    
+    function connect() {
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+      
+      if (!username || !password) {
+        alert("Please enter both username and password");
+        return;
+      }
+      
+      // Close existing connection if any
+      if (socket) {
+        socket.close();
+      }
+      
+      // Connect to WebSocket with authentication
+      socket = new WebSocket(`ws://localhost:8080/ws?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
+      
+      socket.onopen = () => {
+        console.log("WebSocket connected");
+        document.getElementById("connection-status").textContent = "Connected";
+        document.getElementById("connection-status").className = "status connected";
+        
+        // Automatically fetch TURN configuration
+        fetchTurnConfig();
+      };
+      
+      socket.onclose = () => {
+        console.log("WebSocket disconnected");
+        document.getElementById("connection-status").textContent = "Disconnected";
+        document.getElementById("connection-status").className = "status disconnected";
+      };
+      
+      socket.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        document.getElementById("connection-status").textContent = "Error: " + error;
+        document.getElementById("connection-status").className = "status disconnected";
+      };
+      
+      socket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        console.log("Received:", msg);
+        
+        // Add to message log
+        const messageElement = document.createElement("div");
+        messageElement.className = "message";
+        messageElement.textContent = `From ${msg.username || 'server'} (${msg.type}): ${JSON.stringify(msg)}`;
+        document.getElementById("messages").appendChild(messageElement);
+        
+        // Auto-scroll to bottom
+        const messagesDiv = document.getElementById("messages");
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      };
+    }
+
+    function sendMessage() {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        alert("Not connected. Please connect first.");
+        return;
+      }
+      
+      const msg = {
+        type: document.getElementById("type").value,
+        payload: document.getElementById("message").value,
+        username: document.getElementById("username").value,
+        target: document.getElementById("target").value
+      };
+      
+      socket.send(JSON.stringify(msg));
+      
+      // Add to message log
+      const messageElement = document.createElement("div");
+      messageElement.className = "message sent";
+      messageElement.textContent = `Sent (${msg.type}): ${JSON.stringify(msg)}`;
+      document.getElementById("messages").appendChild(messageElement);
+      
+      // Auto-scroll to bottom
+      const messagesDiv = document.getElementById("messages");
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+    
+    function fetchTurnConfig() {
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+      
+      fetch(`/turn?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`)
+        .then(response => response.json())
+        .then(data => {
+          console.log("TURN configuration:", data);
+          // In a real app, you would use this config for RTCPeerConnection
+        })
+        .catch(error => {
+          console.error("Error fetching TURN config:", error);
+        });
+    }
+  </script>
+</body>
+</html>
