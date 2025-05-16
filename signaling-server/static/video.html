@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebRTC Video Call</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    input, textarea, select {
+      width: 100%;
+      padding: 8px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    textarea {
+      height: 100px;
+      resize: vertical;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .connected {
+      background-color: #dff0d8;
+      color: #3c763d;
+    }
+    .disconnected {
+      background-color: #f2dede;
+      color: #a94442;
+    }
+    .login-container {
+      margin-bottom: 20px;
+      padding: 15px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background-color: #f9f9f9;
+    }
+    .video-container {
+      display: flex;
+      justify-content: space-between;
+      margin: 20px 0;
+    }
+    .video-wrapper {
+      width: 48%;
+    }
+    video {
+      width: 100%;
+      background-color: #eee;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin: 20px 0;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .end-call {
+      background-color: #f44336;
+    }
+    .end-call:hover {
+      background-color: #d32f2f;
+    }
+    .button-active {
+      background-color: #2196F3;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebRTC Video Call</h1>
+  
+  <div class="login-container">
+    <h2>Authentication</h2>
+    <div class="form-group">
+      <label for="username">Username:</label>
+      <input id="username" placeholder="Your username" />
+    </div>
+    <div class="form-group">
+      <label for="password">Password:</label>
+      <input id="password" type="password" placeholder="Your password" />
+    </div>
+    <div class="form-group">
+      <label for="targetUser">Call:</label>
+      <input id="targetUser" placeholder="Who to call" />
+    </div>
+    <button id="connect-btn">Connect</button>
+    <div id="status" class="status disconnected">Disconnected</div>
+  </div>
+
+  <div class="video-container">
+    <div class="video-wrapper">
+      <h3>Local Video</h3>
+      <video id="localVideo" autoplay muted playsinline></video>
+    </div>
+    <div class="video-wrapper">
+      <h3>Remote Video</h3>
+      <video id="remoteVideo" autoplay playsinline></video>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="call-btn" disabled>Start Call</button>
+    <button id="end-btn" disabled class="end-call">End Call</button>
+    <button id="mute-btn" disabled>Mute Audio</button>
+    <button id="video-btn" disabled>Turn Off Video</button>
+  </div>
+
+  <script>
+    // Configuration
+    let peerConnection;
+    let localStream;
+    let remoteStream;
+    let socket;
+    let username;
+    let targetUser;
+    let isInitiator = false;
+
+    // UI elements
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const statusDiv = document.getElementById('status');
+    const connectBtn = document.getElementById('connect-btn');
+    const callBtn = document.getElementById('call-btn');
+    const endBtn = document.getElementById('end-btn');
+    const muteBtn = document.getElementById('mute-btn');
+    const videoBtn = document.getElementById('video-btn');
+
+    // WebRTC configuration - will be updated with TURN later
+    const rtcConfig = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' }
+      ]
+    };
+
+    // Connect to signaling server
+    connectBtn.addEventListener('click', async () => {
+      username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      targetUser = document.getElementById('targetUser').value;
+      
+      if (!username || !password || !targetUser) {
+        alert('Please enter all fields');
+        return;
+      }
+      
+      // Connect to WebSocket with credentials
+      socket = new WebSocket(`ws://localhost:8080/ws?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
+      
+      socket.onopen = async () => {
+        updateStatus('Connected to signaling server', true);
+        connectBtn.disabled = true;
+        callBtn.disabled = false;
+        
+        // Get user media and show in local video
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          localVideo.srcObject = localStream;
+          muteBtn.disabled = false;
+          videoBtn.disabled = false;
+        } catch (err) {
+          console.error('Error accessing media devices:', err);
+          updateStatus('Error: ' + err.message, false);
+        }
+      };
+      
+      socket.onclose = () => {
+        updateStatus('Disconnected from signaling server', false);
+        resetUI();
+      };
+      
+      socket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        updateStatus('Connection error', false);
+        resetUI();
+      };
+      
+      socket.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        handleSignalingMessage(message);
+      };
+    });
+
+    // Start call
+    callBtn.addEventListener('click', () => {
+      isInitiator = true;
+      createPeerConnection();
+      updateStatus('Starting call...', true);
+      callBtn.disabled = true;
+      endBtn.disabled = false;
+    });
+
+    // End call
+    endBtn.addEventListener('click', () => {
+      endCall();
+      updateStatus('Call ended', false);
+      callBtn.disabled = false;
+      endBtn.disabled = true;
+    });
+
+    // Toggle audio mute
+    muteBtn.addEventListener('click', () => {
+      const audioTracks = localStream.getAudioTracks();
+      const audioEnabled = !audioTracks[0].enabled;
+      audioTracks[0].enabled = audioEnabled;
+      
+      if (audioEnabled) {
+        muteBtn.textContent = 'Mute Audio';
+        muteBtn.classList.remove('button-active');
+      } else {
+        muteBtn.textContent = 'Unmute Audio';
+        muteBtn.classList.add('button-active');
+      }
+    });
+
+    // Toggle video
+    videoBtn.addEventListener('click', () => {
+      const videoTracks = localStream.getVideoTracks();
+      const videoEnabled = !videoTracks[0].enabled;
+      videoTracks[0].enabled = videoEnabled;
+      
+      if (videoEnabled) {
+        videoBtn.textContent = 'Turn Off Video';
+        videoBtn.classList.remove('button-active');
+      } else {
+        videoBtn.textContent = 'Turn On Video';
+        videoBtn.classList.add('button-active');
+      }
+    });
+
+    // Create RTCPeerConnection
+    function createPeerConnection() {
+      peerConnection = new RTCPeerConnection(rtcConfig);
+      
+      // Add local stream tracks to connection
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
+      
+      // Set up remote stream
+      remoteStream = new MediaStream();
+      remoteVideo.srcObject = remoteStream;
+      
+      // Handle incoming tracks
+      peerConnection.ontrack = (event) => {
+        event.streams[0].getTracks().forEach(track => {
+          remoteStream.addTrack(track);
+        });
+      };
+      
+      // Handle ICE candidates
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          sendSignalingMessage({
+            type: 'candidate',
+            payload: JSON.stringify(event.candidate),
+            target: targetUser
+          });
+        }
+      };
+      
+      // Connection state changes
+      peerConnection.oniceconnectionstatechange = () => {
+        updateStatus('ICE connection state: ' + peerConnection.iceConnectionState, 
+                    peerConnection.iceConnectionState === 'connected' || 
+                    peerConnection.iceConnectionState === 'completed');
+        
+        if (peerConnection.iceConnectionState === 'connected' || 
+            peerConnection.iceConnectionState === 'completed') {
+          updateStatus('Call connected!', true);
+        }
+      };
+      
+      // If initiator, create offer
+      if (isInitiator) {
+        createOffer();
+      }
+    }
+
+    // Create and send offer
+    async function createOffer() {
+      try {
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        
+        sendSignalingMessage({
+          type: 'offer',
+          payload: JSON.stringify(offer),
+          target: targetUser
+        });
+        
+        updateStatus('Offer sent, waiting for answer...', true);
+      } catch (error) {
+        console.error('Error creating offer:', error);
+        updateStatus('Error creating offer', false);
+      }
+    }
+
+    // Handle incoming signaling messages
+    async function handleSignalingMessage(message) {
+      console.log('Received message:', message);
+      
+      switch (message.type) {
+        case 'offer':
+          if (!peerConnection) {
+            createPeerConnection();
+          }
+          
+          try {
+            const offerDescription = JSON.parse(message.payload);
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offerDescription));
+            
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            sendSignalingMessage({
+              type: 'answer',
+              payload: JSON.stringify(answer),
+              target: message.username
+            });
+            
+            updateStatus('Received offer, sent answer', true);
+            endBtn.disabled = false;
+          } catch (error) {
+            console.error('Error handling offer:', error);
+            updateStatus('Error handling offer', false);
+          }
+          break;
+          
+        case 'answer':
+          try {
+            const answerDescription = JSON.parse(message.payload);
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(answerDescription));
+            updateStatus('Received answer, connection establishing...', true);
+          } catch (error) {
+            console.error('Error handling answer:', error);
+            updateStatus('Error handling answer', false);
+          }
+          break;
+          
+        case 'candidate':
+          try {
+            const candidate = JSON.parse(message.payload);
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch (error) {
+            console.error('Error adding ICE candidate:', error);
+          }
+          break;
+          
+        case 'join':
+          updateStatus(`${message.username} joined`, true);
+          break;
+          
+        case 'leave':
+          if (message.username === targetUser) {
+            updateStatus(`${message.username} left, call ended`, false);
+            endCall();
+          }
+          break;
+      }
+    }
+
+    // Send message via signaling server
+    function sendSignalingMessage(message) {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        message.username = username;
+        socket.send(JSON.stringify(message));
+      }
+    }
+
+    // End current call
+    function endCall() {
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+      
+      remoteVideo.srcObject = null;
+      callBtn.disabled = false;
+      endBtn.disabled = true;
+      updateStatus('Call ended', false);
+    }
+
+    // Reset UI on disconnect
+    function resetUI() {
+      connectBtn.disabled = false;
+      callBtn.disabled = true;
+      endBtn.disabled = true;
+      muteBtn.disabled = true;
+      videoBtn.disabled = true;
+      
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localVideo.srcObject = null;
+      }
+      
+      if (remoteStream) {
+        remoteVideo.srcObject = null;
+      }
+    }
+
+    // Update status display
+    function updateStatus(message, connected) {
+      statusDiv.textContent = message;
+      if (connected) {
+        statusDiv.className = "status connected";
+      } else {
+        statusDiv.className = "status disconnected";
+      }
+      console.log(message);
+    }
+  </script>
+</body>
+</html>
