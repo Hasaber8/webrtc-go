@@ -1,1 +1,129 @@
+/* Common styles for both pages */
+body {
+  font-family: Arial, sans-serif;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 20px;
+  background-color: #f5f5f5;
+  color: #333;
+}
 
+h1 {
+  text-align: center;
+  color: #4a4a4a;
+  margin-bottom: 30px;
+}
+
+/* Form elements */
+.form-group {
+  margin-bottom: 15px;
+}
+
+label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 16px;
+}
+
+button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background-color 0.3s;
+}
+
+button:hover {
+  background-color: #45a049;
+}
+
+button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+/* Status indicators */
+.status-bar {
+  margin-top: 15px;
+  padding: 10px;
+  border-radius: 4px;
+  text-align: center;
+  background-color: #f2dede;
+  color: #a94442;
+}
+
+.status-connected {
+  background-color: #dff0d8;
+  color: #3c763d;
+}
+
+/* Login page specific */
+.login-container {
+  max-width: 500px;
+  margin: 0 auto;
+  padding: 30px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Video call page specific */
+.video-container {
+  margin-top: 20px;
+}
+
+.video-area {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.video-wrapper {
+  width: 48%;
+}
+
+.video-wrapper h2 {
+  margin-bottom: 10px;
+  font-size: 18px;
+  color: #555;
+}
+
+video {
+  width: 100%;
+  background-color: #eee;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  height: 300px; /* Fixed height for consistency */
+  object-fit: cover;
+}
+
+.controls {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin: 25px 0;
+}
+
+#endCallBtn {
+  background-color: #f44336;
+}
+
+#endCallBtn:hover {
+  background-color: #d32f2f;
+}
+
+#muteAudioBtn.active, #toggleVideoBtn.active {
+  background-color: #2196F3;
+}

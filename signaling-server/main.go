@@ -191,11 +191,20 @@ func main() {
 	// Serve static files
 	http.Handle("/", http.FileServer(http.Dir("./static")))
 
-	// Start server
-	fmt.Println("Signaling server running on :8080")
-	log.Printf("WebRTC signaling server started")
-	err := http.ListenAndServe(":8080", nil)
+	// Start HTTP server
+	go func() {
+		fmt.Println("HTTP Signaling server running on :8080")
+		err := http.ListenAndServe(":8080", nil)
+		if err != nil {
+			log.Printf("HTTP ListenAndServe error: %v", err)
+		}
+	}()
+	
+	// Start HTTPS server
+	fmt.Println("HTTPS Signaling server running on :8443")
+	log.Printf("WebRTC signaling server started with HTTPS support")
+	err := http.ListenAndServeTLS(":8443", "./certs/cert.pem", "./certs/key.pem", nil)
 	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		log.Fatal("HTTPS ListenAndServe: ", err)
 	}
 }

@@ -1,92 +1,13 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>WebRTC Signaling Test</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-    .container {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .form-group {
-      margin-bottom: 15px;
-    }
-    label {
-      display: block;
-      margin-bottom: 5px;
-      font-weight: bold;
-    }
-    input, textarea, select {
-      width: 100%;
-      padding: 8px;
-      box-sizing: border-box;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-    }
-    textarea {
-      height: 100px;
-      resize: vertical;
-    }
-    button {
-      background-color: #4CAF50;
-      color: white;
-      padding: 10px 15px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:hover {
-      background-color: #45a049;
-    }
-    .status {
-      margin-top: 20px;
-      padding: 10px;
-      border-radius: 4px;
-    }
-    .connected {
-      background-color: #dff0d8;
-      color: #3c763d;
-    }
-    .disconnected {
-      background-color: #f2dede;
-      color: #a94442;
-    }
-    .messages {
-      margin-top: 20px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      padding: 10px;
-      height: 200px;
-      overflow-y: auto;
-      background-color: #f9f9f9;
-    }
-    .message {
-      margin-bottom: 8px;
-      padding: 8px;
-      background-color: #fff;
-      border-radius: 4px;
-      border-left: 3px solid #4CAF50;
-    }
-    .message.sent {
-      border-left-color: #2196F3;
-    }
-    .login-container {
-      margin-bottom: 20px;
-      padding: 15px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      background-color: #f9f9f9;
-    }
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRTC Video Call - Login</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>WebRTC Signaling Test</h1>
+  <h1>WebRTC Video Call</h1>
   
   <div class="login-container">
     <h2>Authentication</h2>
@@ -98,46 +19,54 @@
       <label for="password">Password:</label>
       <input id="password" type="password" placeholder="Your password" />
     </div>
-    <button id="connect-btn" onclick="connect()">Connect</button>
-    <div id="connection-status" class="status disconnected">Disconnected</div>
+    <div class="form-group">
+      <label for="targetUser">Call:</label>
+      <input id="targetUser" placeholder="Who to call" />
+    </div>
+    <button id="connectBtn">Connect</button>
+    <div id="status-message" class="status-bar">Please login to start a call</div>
   </div>
-
-  <div class="container">
-    <h2>Send Message</h2>
-    <div class="form-group">
-      <label for="target">Send to:</label>
-      <input id="target" placeholder="Recipient's username" />
-    </div>
-    <div class="form-group">
-      <label for="type">Message Type:</label>
-      <select id="type">
-        <option value="offer">SDP Offer</option>
-        <option value="answer">SDP Answer</option>
-        <option value="candidate">ICE Candidate</option>
-        <option value="join">Join Notification</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label for="message">Payload:</label>
-      <textarea id="message" placeholder="Enter SDP or ICE payload"></textarea>
-    </div>
-    <button onclick="sendMessage()">Send Message</button>
-  </div>
-
-  <h2>Message Log</h2>
-  <div id="messages" class="messages"></div>
 
   <script>
+    // WebSocket connection
     let socket;
     
+    // DOM elements
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    const targetUserInput = document.getElementById('targetUser');
+    const connectButton = document.getElementById('connectBtn');
+    const statusMessage = document.getElementById('status-message');
+    
+    // Add event listener to connect button
+    connectButton.addEventListener('click', connect);
+    
+    // Handle Enter key press in input fields
+    usernameInput.addEventListener('keypress', handleKeyPress);
+    passwordInput.addEventListener('keypress', handleKeyPress);
+    targetUserInput.addEventListener('keypress', handleKeyPress);
+    
+    function handleKeyPress(event) {
+      if (event.key === 'Enter') {
+        connect();
+      }
+    }
+    
+    // Connect to WebSocket server with authentication
     function connect() {
-      const username = document.getElementById("username").value;
-      const password = document.getElementById("password").value;
+      const username = usernameInput.value.trim();
+      const password = passwordInput.value.trim();
+      const targetUser = targetUserInput.value.trim();
       
-      if (!username || !password) {
-        alert("Please enter both username and password");
+      // Validate inputs
+      if (!username || !password || !targetUser) {
+        updateStatus('Please enter all fields', false);
         return;
       }
+      
+      // Disable the connect button during connection attempt
+      connectButton.disabled = true;
+      updateStatus('Connecting...', false);
       
       // Close existing connection if any
       if (socket) {
@@ -145,84 +74,65 @@
       }
       
       // Connect to WebSocket with authentication
-      socket = new WebSocket(`ws://localhost:8080/ws?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
+      // Use wss:// for HTTPS connections, ws:// for HTTP
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      socket = new WebSocket(`${wsProtocol}//${window.location.host}/ws?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
       
       socket.onopen = () => {
-        console.log("WebSocket connected");
-        document.getElementById("connection-status").textContent = "Connected";
-        document.getElementById("connection-status").className = "status connected";
+        console.log('WebSocket connected');
+        updateStatus('Connected! Redirecting to video call...', true);
         
-        // Automatically fetch TURN configuration
-        fetchTurnConfig();
+        // Store credentials in sessionStorage instead of URL parameters
+        sessionStorage.setItem('username', username);
+        sessionStorage.setItem('targetUser', targetUser);
+        sessionStorage.setItem('password', password);
+        
+        // Wait a moment before redirecting to show the success message
+        setTimeout(() => {
+          // Redirect to video.html (without parameters in URL)
+          window.location.href = 'video.html';
+        }, 1500);
       };
       
       socket.onclose = () => {
-        console.log("WebSocket disconnected");
-        document.getElementById("connection-status").textContent = "Disconnected";
-        document.getElementById("connection-status").className = "status disconnected";
+        console.log('WebSocket disconnected');
+        updateStatus('Connection failed. Please try again.', false);
+        connectButton.disabled = false;
       };
       
       socket.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        document.getElementById("connection-status").textContent = "Error: " + error;
-        document.getElementById("connection-status").className = "status disconnected";
+        console.error('WebSocket error:', error);
+        updateStatus('Error connecting. Please try again.', false);
+        connectButton.disabled = false;
       };
       
       socket.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        console.log("Received:", msg);
-        
-        // Add to message log
-        const messageElement = document.createElement("div");
-        messageElement.className = "message";
-        messageElement.textContent = `From ${msg.username || 'server'} (${msg.type}): ${JSON.stringify(msg)}`;
-        document.getElementById("messages").appendChild(messageElement);
-        
-        // Auto-scroll to bottom
-        const messagesDiv = document.getElementById("messages");
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        try {
+          const msg = JSON.parse(event.data);
+          console.log('Received:', msg);
+          
+          // Handle any specific messages if needed before redirect
+          if (msg.type === 'error') {
+            updateStatus(`Error: ${msg.payload.message || 'Authentication failed'}`, false);
+            connectButton.disabled = false;
+          }
+        } catch (error) {
+          console.error('Error parsing message:', error);
+        }
       };
     }
 
-    function sendMessage() {
-      if (!socket || socket.readyState !== WebSocket.OPEN) {
-        alert("Not connected. Please connect first.");
-        return;
-      }
-      
-      const msg = {
-        type: document.getElementById("type").value,
-        payload: document.getElementById("message").value,
-        username: document.getElementById("username").value,
-        target: document.getElementById("target").value
-      };
-      
-      socket.send(JSON.stringify(msg));
-      
-      // Add to message log
-      const messageElement = document.createElement("div");
-      messageElement.className = "message sent";
-      messageElement.textContent = `Sent (${msg.type}): ${JSON.stringify(msg)}`;
-      document.getElementById("messages").appendChild(messageElement);
-      
-      // Auto-scroll to bottom
-      const messagesDiv = document.getElementById("messages");
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    }
+    // No need for sendMessage and fetchTurnConfig functions on the login page
+    // These will be handled in the video.html page
     
-    function fetchTurnConfig() {
-      const username = document.getElementById("username").value;
-      const password = document.getElementById("password").value;
-      
-      fetch(`/turn?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`)
-        .then(response => response.json())
-        .then(data => {
-          console.log("TURN configuration:", data);
-          // In a real app, you would use this config for RTCPeerConnection
-        })
-        .catch(error => {
-          console.error("Error fetching TURN config:", error);
-        });
+    // Update status message with appropriate styling
+    function updateStatus(message, isSuccess) {
+      statusMessage.textContent = message;
+      if (isSuccess) {
+        statusMessage.classList.add('status-connected');
+      } else {
+        statusMessage.classList.remove('status-connected');
+      }
     }
   </script>
 </body>

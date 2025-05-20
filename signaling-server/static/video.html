@@ -1,141 +1,35 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WebRTC Video Call</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-    .container {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .form-group {
-      margin-bottom: 15px;
-    }
-    label {
-      display: block;
-      margin-bottom: 5px;
-      font-weight: bold;
-    }
-    input, textarea, select {
-      width: 100%;
-      padding: 8px;
-      box-sizing: border-box;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-    }
-    textarea {
-      height: 100px;
-      resize: vertical;
-    }
-    button {
-      background-color: #4CAF50;
-      color: white;
-      padding: 10px 15px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:hover {
-      background-color: #45a049;
-    }
-    .status {
-      margin-top: 20px;
-      padding: 10px;
-      border-radius: 4px;
-    }
-    .connected {
-      background-color: #dff0d8;
-      color: #3c763d;
-    }
-    .disconnected {
-      background-color: #f2dede;
-      color: #a94442;
-    }
-    .login-container {
-      margin-bottom: 20px;
-      padding: 15px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      background-color: #f9f9f9;
-    }
-    .video-container {
-      display: flex;
-      justify-content: space-between;
-      margin: 20px 0;
-    }
-    .video-wrapper {
-      width: 48%;
-    }
-    video {
-      width: 100%;
-      background-color: #eee;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-    }
-    .controls {
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-      margin: 20px 0;
-    }
-    button:disabled {
-      background-color: #cccccc;
-      cursor: not-allowed;
-    }
-    .end-call {
-      background-color: #f44336;
-    }
-    .end-call:hover {
-      background-color: #d32f2f;
-    }
-    .button-active {
-      background-color: #2196F3;
-    }
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <h1>WebRTC Video Call</h1>
   
-  <div class="login-container">
-    <h2>Authentication</h2>
-    <div class="form-group">
-      <label for="username">Username:</label>
-      <input id="username" placeholder="Your username" />
-    </div>
-    <div class="form-group">
-      <label for="password">Password:</label>
-      <input id="password" type="password" placeholder="Your password" />
-    </div>
-    <div class="form-group">
-      <label for="targetUser">Call:</label>
-      <input id="targetUser" placeholder="Who to call" />
-    </div>
-    <button id="connect-btn">Connect</button>
-    <div id="status" class="status disconnected">Disconnected</div>
+  <div id="call-info">
+    <p>Call with: <span id="target-display">...</span></p>
+    <div id="status-message" class="status-bar">Initializing call...</div>
   </div>
 
-  <div class="video-container">
+  <div class="video-area">
     <div class="video-wrapper">
-      <h3>Local Video</h3>
+      <h2>Local Video</h2>
       <video id="localVideo" autoplay muted playsinline></video>
     </div>
     <div class="video-wrapper">
-      <h3>Remote Video</h3>
+      <h2>Remote Video</h2>
       <video id="remoteVideo" autoplay playsinline></video>
     </div>
   </div>
 
   <div class="controls">
-    <button id="call-btn" disabled>Start Call</button>
-    <button id="end-btn" disabled class="end-call">End Call</button>
-    <button id="mute-btn" disabled>Mute Audio</button>
-    <button id="video-btn" disabled>Turn Off Video</button>
+    <button id="startCallBtn">Start Call</button>
+    <button id="endCallBtn" disabled>End Call</button>
+    <button id="muteAudioBtn">Mute Audio</button>
+    <button id="toggleVideoBtn">Turn Off Video</button>
   </div>
 
   <script>
@@ -147,16 +41,17 @@
     let username;
     let targetUser;
     let isInitiator = false;
+    let password = 'password1'; // Hardcoded for MVP as per PRD
 
     // UI elements
     const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
-    const statusDiv = document.getElementById('status');
-    const connectBtn = document.getElementById('connect-btn');
-    const callBtn = document.getElementById('call-btn');
-    const endBtn = document.getElementById('end-btn');
-    const muteBtn = document.getElementById('mute-btn');
-    const videoBtn = document.getElementById('video-btn');
+    const statusMessage = document.getElementById('status-message');
+    const targetDisplay = document.getElementById('target-display');
+    const startCallBtn = document.getElementById('startCallBtn');
+    const endCallBtn = document.getElementById('endCallBtn');
+    const muteAudioBtn = document.getElementById('muteAudioBtn');
+    const toggleVideoBtn = document.getElementById('toggleVideoBtn');
 
     // WebRTC configuration - will be updated with TURN later
     const rtcConfig = {
@@ -165,98 +60,189 @@
       ]
     };
 
-    // Connect to signaling server
-    connectBtn.addEventListener('click', async () => {
-      username = document.getElementById('username').value;
-      const password = document.getElementById('password').value;
-      targetUser = document.getElementById('targetUser').value;
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', initialize);
+
+    // Initialize the call page
+    async function initialize() {
+      // Get credentials from sessionStorage
+      username = sessionStorage.getItem('username');
+      targetUser = sessionStorage.getItem('targetUser');
+      password = sessionStorage.getItem('password');
       
-      if (!username || !password || !targetUser) {
-        alert('Please enter all fields');
+      // Validate credentials
+      if (!username || !targetUser || !password) {
+        updateStatus('Missing credentials. Please return to login page.', false);
         return;
       }
       
-      // Connect to WebSocket with credentials
-      socket = new WebSocket(`ws://localhost:8080/ws?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
+      // Update UI
+      targetDisplay.textContent = targetUser;
+      updateStatus('Connecting to signaling server...', false);
       
-      socket.onopen = async () => {
-        updateStatus('Connected to signaling server', true);
-        connectBtn.disabled = true;
-        callBtn.disabled = false;
+      // Connect to WebSocket with credentials
+      connectToSignalingServer();
+      
+      // Check if media devices API is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        updateStatus('WebRTC is not fully supported in this browser. Try using Safari on iOS or Chrome on Android.', false);
         
-        // Get user media and show in local video
-        try {
-          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-          localVideo.srcObject = localStream;
-          muteBtn.disabled = false;
-          videoBtn.disabled = false;
-        } catch (err) {
-          console.error('Error accessing media devices:', err);
-          updateStatus('Error: ' + err.message, false);
-        }
+        // Add info button to explain the issue
+        const infoBtn = document.createElement('button');
+        infoBtn.textContent = 'Why am I seeing this?';
+        infoBtn.className = 'info-btn';
+        document.querySelector('.controls').prepend(infoBtn);
+        
+        infoBtn.addEventListener('click', () => {
+          alert('Camera and microphone access requires:\n\n1. A secure connection (HTTPS)\n2. A modern browser with WebRTC support\n3. On iOS, Safari works best\n\nYou can still use text chat, but video/audio will not be available.');
+        });
+      } else {
+        // Add a button to request media permissions
+        const permissionBtn = document.createElement('button');
+        permissionBtn.textContent = 'Allow Camera & Microphone';
+        permissionBtn.className = 'permission-btn';
+        document.querySelector('.controls').prepend(permissionBtn);
+        
+        permissionBtn.addEventListener('click', async () => {
+          try {
+            updateStatus('Requesting camera and microphone access...', true);
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            localVideo.srcObject = localStream;
+            muteAudioBtn.disabled = false;
+            toggleVideoBtn.disabled = false;
+            permissionBtn.remove(); // Remove the button after successful permission
+            updateStatus('Camera and microphone access granted', true);
+          } catch (err) {
+            console.error('Error accessing media devices:', err);
+            updateStatus(`Error accessing camera/microphone: ${err.message}`, false);
+          }
+        });
+      }
+    }
+    
+    // Connect to signaling server
+    function connectToSignalingServer() {
+      // Use wss:// for HTTPS connections, ws:// for HTTP
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      socket = new WebSocket(`${wsProtocol}//${window.location.host}/ws?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
+      
+      socket.onopen = () => {
+        console.log('Connected to signaling server');
+        updateStatus('Connected to signaling server. Ready to start call.', true);
+        startCallBtn.disabled = false;
       };
       
       socket.onclose = () => {
-        updateStatus('Disconnected from signaling server', false);
+        console.log('Disconnected from signaling server');
+        updateStatus('Disconnected from server. Please refresh to reconnect.', false);
         resetUI();
       };
       
       socket.onerror = (error) => {
         console.error('WebSocket error:', error);
-        updateStatus('Connection error', false);
+        updateStatus('Connection error. Please refresh to try again.', false);
         resetUI();
       };
       
       socket.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        handleSignalingMessage(message);
+        try {
+          const message = JSON.parse(event.data);
+          console.log('Received message:', message);
+          handleSignalingMessage(message);
+        } catch (error) {
+          console.error('Error parsing message:', error);
+        }
       };
-    });
+    }
 
-    // Start call
-    callBtn.addEventListener('click', () => {
+    // Start call button event listener
+    startCallBtn.addEventListener('click', async () => {
+      // Check if media devices API is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        updateStatus('WebRTC is not fully supported in this browser. Video/audio will not be available.', false);
+        // Still allow the connection for text-based signaling
+        isInitiator = true;
+        createPeerConnection();
+        updateStatus('Starting call (text only)...', true);
+        startCallBtn.disabled = true;
+        endCallBtn.disabled = false;
+        return;
+      }
+      
+      // Check if we have media permissions yet
+      if (!localStream) {
+        try {
+          updateStatus('Requesting camera and microphone access...', true);
+          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          localVideo.srcObject = localStream;
+          muteAudioBtn.disabled = false;
+          toggleVideoBtn.disabled = false;
+        } catch (err) {
+          console.error('Error accessing media devices:', err);
+          updateStatus(`Cannot start call with video/audio: ${err.message}`, false);
+          
+          // Ask if they want to continue with text-only
+          if (confirm('Camera/microphone access failed. Continue with text-only?')) {
+            isInitiator = true;
+            createPeerConnection();
+            updateStatus('Starting call (text only)...', true);
+            startCallBtn.disabled = true;
+            endCallBtn.disabled = false;
+          }
+          return;
+        }
+      }
+      
       isInitiator = true;
       createPeerConnection();
       updateStatus('Starting call...', true);
-      callBtn.disabled = true;
-      endBtn.disabled = false;
+      startCallBtn.disabled = true;
+      endCallBtn.disabled = false;
     });
 
-    // End call
-    endBtn.addEventListener('click', () => {
+    // End call button event listener
+    endCallBtn.addEventListener('click', () => {
       endCall();
       updateStatus('Call ended', false);
-      callBtn.disabled = false;
-      endBtn.disabled = true;
+      startCallBtn.disabled = false;
+      endCallBtn.disabled = true;
     });
 
-    // Toggle audio mute
-    muteBtn.addEventListener('click', () => {
+    // Mute audio button event listener
+    muteAudioBtn.addEventListener('click', () => {
+      if (!localStream) return;
+      
       const audioTracks = localStream.getAudioTracks();
+      if (audioTracks.length === 0) return;
+      
       const audioEnabled = !audioTracks[0].enabled;
       audioTracks[0].enabled = audioEnabled;
       
       if (audioEnabled) {
-        muteBtn.textContent = 'Mute Audio';
-        muteBtn.classList.remove('button-active');
+        muteAudioBtn.textContent = 'Mute Audio';
+        muteAudioBtn.classList.remove('active');
       } else {
-        muteBtn.textContent = 'Unmute Audio';
-        muteBtn.classList.add('button-active');
+        muteAudioBtn.textContent = 'Unmute Audio';
+        muteAudioBtn.classList.add('active');
       }
     });
 
-    // Toggle video
-    videoBtn.addEventListener('click', () => {
+    // Toggle video button event listener
+    toggleVideoBtn.addEventListener('click', () => {
+      if (!localStream) return;
+      
       const videoTracks = localStream.getVideoTracks();
+      if (videoTracks.length === 0) return;
+      
       const videoEnabled = !videoTracks[0].enabled;
       videoTracks[0].enabled = videoEnabled;
       
       if (videoEnabled) {
-        videoBtn.textContent = 'Turn Off Video';
-        videoBtn.classList.remove('button-active');
+        toggleVideoBtn.textContent = 'Turn Off Video';
+        toggleVideoBtn.classList.remove('active');
       } else {
-        videoBtn.textContent = 'Turn On Video';
-        videoBtn.classList.add('button-active');
+        toggleVideoBtn.textContent = 'Turn On Video';
+        toggleVideoBtn.classList.add('active');
       }
     });
 
@@ -265,9 +251,11 @@
       peerConnection = new RTCPeerConnection(rtcConfig);
       
       // Add local stream tracks to connection
-      localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-      });
+      if (localStream) {
+        localStream.getTracks().forEach(track => {
+          peerConnection.addTrack(track, localStream);
+        });
+      }
       
       // Set up remote stream
       remoteStream = new MediaStream();
@@ -278,6 +266,7 @@
         event.streams[0].getTracks().forEach(track => {
           remoteStream.addTrack(track);
         });
+        updateStatus('Received remote media stream', true);
       };
       
       // Handle ICE candidates
@@ -293,14 +282,21 @@
       
       // Connection state changes
       peerConnection.oniceconnectionstatechange = () => {
-        updateStatus('ICE connection state: ' + peerConnection.iceConnectionState, 
-                    peerConnection.iceConnectionState === 'connected' || 
-                    peerConnection.iceConnectionState === 'completed');
+        const state = peerConnection.iceConnectionState;
+        console.log(`ICE connection state: ${state}`);
         
-        if (peerConnection.iceConnectionState === 'connected' || 
-            peerConnection.iceConnectionState === 'completed') {
+        if (state === 'connected' || state === 'completed') {
           updateStatus('Call connected!', true);
+        } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+          updateStatus(`Call ${state}. Try again.`, false);
+          endCallBtn.disabled = true;
+          startCallBtn.disabled = false;
         }
+      };
+      
+      // Connection state changes
+      peerConnection.onconnectionstatechange = () => {
+        console.log(`Connection state: ${peerConnection.connectionState}`);
       };
       
       // If initiator, create offer
@@ -352,7 +348,8 @@
             });
             
             updateStatus('Received offer, sent answer', true);
-            endBtn.disabled = false;
+            endCallBtn.disabled = false;
+            startCallBtn.disabled = true;
           } catch (error) {
             console.error('Error handling offer:', error);
             updateStatus('Error handling offer', false);
@@ -389,6 +386,10 @@
             endCall();
           }
           break;
+          
+        case 'error':
+          updateStatus(`Error: ${message.payload.message || 'Unknown error'}`, false);
+          break;
       }
     }
 
@@ -397,6 +398,9 @@
       if (socket && socket.readyState === WebSocket.OPEN) {
         message.username = username;
         socket.send(JSON.stringify(message));
+      } else {
+        console.error('Cannot send message, socket not connected');
+        updateStatus('Connection lost. Please refresh the page.', false);
       }
     }
 
@@ -408,18 +412,23 @@
       }
       
       remoteVideo.srcObject = null;
-      callBtn.disabled = false;
-      endBtn.disabled = true;
+      startCallBtn.disabled = false;
+      endCallBtn.disabled = true;
       updateStatus('Call ended', false);
+      
+      // Send leave notification to peer
+      sendSignalingMessage({
+        type: 'leave',
+        target: targetUser
+      });
     }
 
     // Reset UI on disconnect
     function resetUI() {
-      connectBtn.disabled = false;
-      callBtn.disabled = true;
-      endBtn.disabled = true;
-      muteBtn.disabled = true;
-      videoBtn.disabled = true;
+      startCallBtn.disabled = true;
+      endCallBtn.disabled = true;
+      muteAudioBtn.disabled = true;
+      toggleVideoBtn.disabled = true;
       
       if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
@@ -429,15 +438,20 @@
       if (remoteStream) {
         remoteVideo.srcObject = null;
       }
+      
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
     }
 
     // Update status display
-    function updateStatus(message, connected) {
-      statusDiv.textContent = message;
-      if (connected) {
-        statusDiv.className = "status connected";
+    function updateStatus(message, isSuccess) {
+      statusMessage.textContent = message;
+      if (isSuccess) {
+        statusMessage.classList.add('status-connected');
       } else {
-        statusDiv.className = "status disconnected";
+        statusMessage.classList.remove('status-connected');
       }
       console.log(message);
     }
