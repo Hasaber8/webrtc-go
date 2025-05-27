@@ -1,1 +1,20 @@
+version: '3.8'
 
+services:
+  signaling-server:
+    build:
+      context: ../signaling-server
+      dockerfile: Dockerfile
+    container_name: webrtc-signaling-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # HTTP
+      - "8443:8443"  # HTTPS
+      - "3478:3478"  # TURN/STUN (for future use)
+      - "3478:3478/udp"  # TURN/STUN UDP (for future use)
+    networks:
+      - webrtc-network
+
+networks:
+  webrtc-network:
+    driver: bridge
